@@ -30,6 +30,36 @@ def load_sphere(vecs=None, refinement=2):
         pickle.dump(sph, open(sphere_file, 'wb'))
     return sph
 
+def compute_bounds(S_data, bvals):
+    # get noise intervals from background pixels (using mask)
+    # determine background pixels
+    #_, mask = median_otsu(S_data, median_radius=3, numpass=1, dilate=2,
+    #                              vol_idx=np.where(gtab.bvals > 0)[0])
+
+    # for the moment using trivial bounds
+    logging.debug("Getting bounds on S0 and Si's")
+    c = 0.05
+    S0_l = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)*(1.0-c)
+    S0_u = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)*(1.0+c)
+    S_l = S_data[..., gtab.bvals > 0]*(1.0-c)
+    S_u = S_data[..., gtab.bvals > 0]*(1.0+c)
+
+    logging.debug("Bounds for normalized data E = S/S_0 ...")
+    E_u = S_u/S0_l[..., None]
+    E_l = S_l/S0_u[..., None]
+
+    # check that E_u, E_l in (0,1)
+    # (E_u-E_l).min()
+    # (E_u-E_l).max()
+
+    logging.debug("Bounds for the monotone decreasing log(-log) transform")
+    loglog_E_u = np.log(-np.log(E_l))
+    loglog_E_l = np.log(-np.log(E_u))
+
+    # TODO: Bounds for FRT?!
+
+    return loglog_E_l, loglog_E_u
+
 logging.debug("Loading realworld data ...")
 fetch_stanford_hardi()
 img, gtab = read_stanford_hardi()
@@ -40,25 +70,11 @@ assert(gtab.bvals is not None)
 assert(gtab.bvecs.shape[1] == 3)
 assert(S_data.shape[-1] == gtab.bvals.size)
 
-# determine background pixels
-_, mask = median_otsu(S_data, median_radius=3, numpass=1, dilate=2,
-                              vol_idx=np.where(gtab.bvals > 0)[0])
+rhs_l, rhs_u = compute_bounds(S_data, gtab.bvals)
 
-# get noise intervals from background pixels (using mask)
-# TODO, for the moment using trivial bounds
-c = 0.05
-logging.debug("Getting bounds on S0 and Si's")
-S0_l = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)*(1.0-c)
-S0_u = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)*(1.0+c)
-S_l = S_data[..., gtab.bvals > 0]*(1.0-c)
-S_u = S_data[..., gtab.bvals > 0]*(1.0+c)
-# only needed for a test
+# data preparation
 S0 = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)
 E_data = S_data[..., gtab.bvals > 0]/S0[..., None]
-
-logging.debug("Bounds for normalized data E = S/S_0 ...")
-E_u = S_u/S0_l[..., None]
-E_l = S_l/S0_u[..., None]
 
 # check that E is in (0,1)
 if (E_data.min()>=0) & (E_data.max()<=1):
@@ -66,14 +82,8 @@ if (E_data.min()>=0) & (E_data.max()<=1):
 else:
     logging.debug("E_data is not between 0 and 1")
 
-# check that E_u, E_l in (0,1)
-(E_u-E_l).min()
-(E_u-E_l).max()
-
-logging.debug("Bounds for the monotone decreasing log(-log) transform")
 # log(-log(E))
-loglog_E_u = np.log(-np.log(E_l))
-loglog_E_l = np.log(-np.log(E_u))
+loglog_data = np.log(-np.log(E_data.clip(.001, .999)))
 
 logging.debug("Preparing FRT ...")
 b_vecs = gtab.bvecs[gtab.bvals > 0,...].T
