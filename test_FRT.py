@@ -30,4 +30,4 @@ for b_phi, b_theta in coords_range:
                     b_phi, b_theta, n, k
                 ))
 
-print("All (%d) tests passed!" % (len(coords_range)*len(n_range),))
+print("All (%d) tests done!" % (len(coords_range)*len(n_range),))

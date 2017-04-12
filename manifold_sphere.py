@@ -4,10 +4,25 @@ from __future__ import division
 from compute_mean import manifold_mean
 from tools import normalize, plot_mesh3
 
+import pickle
 import numpy as np
 from scipy.spatial import SphericalVoronoi
 
 import logging
+
+def load_sphere(vecs=None, refinement=2):
+    if vecs is not None:
+        sphere_lvl = vecs.shape[1]
+    else:
+        sphere_lvl = "r{}".format(refinement)
+    sphere_file = "manifolds/sphere-{}.pickle".format(sphere_lvl)
+    try:
+        sph = pickle.load(open(sphere_file, 'rb'))
+    except:
+        print("No cached sphere({}). Preparing...".format(sphere_lvl))
+        sph = Sphere(vecs=vecs, refinement=refinement)
+        pickle.dump(sph, open(sphere_file, 'wb'))
+    return sph
 
 class Sphere(object):
     """A 2D sphere, parametrized directly by the embedding in R^3."""
@@ -172,7 +187,7 @@ class Sphere(object):
             self.B[j] = C.dot(Dalph.T).dot(E)
 
     def interpolate(self, f, x):
-        return np.einsum('i,i->', f, self.embed_barycentric(x))
+        return np.einsum('ji,i->j', f, self.embed_barycentric(x))
 
     def embed_barycentric(self, x):
         """ Embed a 3D vector into the triangulation using barycentric coordinates.

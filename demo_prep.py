@@ -8,30 +8,17 @@ logging.basicConfig(
     level=logging.DEBUG
 )
 
-import pickle
 import numpy as np
 from dipy.data import fetch_stanford_hardi, read_stanford_hardi
 from dipy.segment.mask import median_otsu
 from scipy.spatial import SphericalVoronoi
 
-from manifold_sphere import Sphere
-from tools import FRT_linop
+from manifold_sphere import load_sphere
+from tools import FRT_linop, InverseLaplaceBeltrami
 
-def load_sphere(vecs=None, refinement=2):
-    if vecs is not None:
-        sphere_lvl = vecs.shape[1]
-    else:
-        sphere_lvl = "r{}".format(refinement)
-    sphere_file = "manifolds/sphere-{}.pickle".format(sphere_lvl)
-    try:
-        sph = pickle.load(open(sphere_file, 'rb'))
-    except:
-        sph = Sphere(vecs=vecs, refinement=refinement)
-        pickle.dump(sph, open(sphere_file, 'wb'))
-    return sph
-
-def compute_bounds(S_data, bvals):
+def compute_bounds(S_data, bvals, FRT_op):
     # get noise intervals from background pixels (using mask)
+
     # determine background pixels
     #_, mask = median_otsu(S_data, median_radius=3, numpass=1, dilate=2,
     #                              vol_idx=np.where(gtab.bvals > 0)[0])
@@ -48,17 +35,15 @@ def compute_bounds(S_data, bvals):
     E_u = S_u/S0_l[..., None]
     E_l = S_l/S0_u[..., None]
 
-    # check that E_u, E_l in (0,1)
-    # (E_u-E_l).min()
-    # (E_u-E_l).max()
-
     logging.debug("Bounds for the monotone decreasing log(-log) transform")
-    loglog_E_u = np.log(-np.log(E_l))
-    loglog_E_l = np.log(-np.log(E_u))
+    loglog_E_u = np.log(-np.log(E_l.clip(.001, .999)))
+    loglog_E_l = np.log(-np.log(E_u.clip(.001, .999)))
 
-    # TODO: Bounds for FRT?!
+    logging.debug("Bounds for the FRT")
+    rhs_u = np.einsum('kl,...l->...k', FRT_op, loglog_E_u)
+    rhs_l = np.einsum('kl,...l->...k', FRT_op, loglog_E_l)
 
-    return loglog_E_l, loglog_E_u
+    return rhs_l, rhs_u
 
 logging.debug("Loading realworld data ...")
 fetch_stanford_hardi()
@@ -70,32 +55,21 @@ assert(gtab.bvals is not None)
 assert(gtab.bvecs.shape[1] == 3)
 assert(S_data.shape[-1] == gtab.bvals.size)
 
-rhs_l, rhs_u = compute_bounds(S_data, gtab.bvals)
-
-# data preparation
-S0 = S_data[..., gtab.bvals == 0].clip(1.0).mean(-1)
-E_data = S_data[..., gtab.bvals > 0]/S0[..., None]
-
-# check that E is in (0,1)
-if (E_data.min()>=0) & (E_data.max()<=1):
-    logging.debug("E_data is OK")
-else:
-    logging.debug("E_data is not between 0 and 1")
-
-# log(-log(E))
-loglog_data = np.log(-np.log(E_data.clip(.001, .999)))
-
 logging.debug("Preparing FRT ...")
 b_vecs = gtab.bvecs[gtab.bvals > 0,...].T
 b_sph = load_sphere(vecs=b_vecs)
 sph = load_sphere(refinement=2)
 FRT_op = FRT_linop(b_sph, sph)
 
-#logging.debug("Applying FRT to data ...")
-#FRT_data = np.einsum('kl,...l->...k', loglog_data, FRT_op)
+rhs_l, rhs_u = compute_bounds(S_data, gtab.bvals, FRT_op)
 
-# prepare laplace-beltrami operator on sphere grid
-# U(x,x0) = -1/(4*np.pi) * np.log(np.abs(1 - <x,x_0>))
-# TODO
+logging.debug("Preparing inverse laplacian ...")
+U = InverseLaplaceBeltrami(sph, b_sph)
 
-# Then: rhs_l < [2 - log(2)]/(4*np.pi) - U(odf) < rhs_u
+"""
+Then:
+    minimize TV(odf)
+    s.t. rhs_l < [2 - log(2)]/(4*np.pi) - U(odf) < rhs_u,
+         integral(odf) = 1
+         odf >= 0
+"""

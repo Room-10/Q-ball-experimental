@@ -82,7 +82,7 @@ def FRT_compute(f, p, n=20):
 
     # integrate over great circle orthogonal to p
     theta = 0.0
-    result = 0.0
+    result = 0.0*f(np.array([1,0,0]))
     for k in range(n):
         theta += delta_th
         v_th = np.cos(theta)*v1 + np.sin(theta)*v2
@@ -105,14 +105,18 @@ def FRT_linop(sph1, sph2, n=20):
     """
     l1, l2 = sph1.mdims['l_labels'], sph2.mdims['l_labels']
     A = np.zeros((l2, l1))
-    e_i = np.zeros((l1,))
-    for i in range(l1):
-        e_i *= 0.0
-        e_i[i] = 1.0
-        for j in range(l2):
-            f_i = lambda x: sph1.interpolate(e_i, x)
-            A[j,i] = FRT_compute(f_i, sph2.v[:,j], n)
+    E = np.eye(l1)
+    for j in range(l2):
+        f = lambda x: sph1.interpolate(E, x)
+        A[j,:] = FRT_compute(f, sph2.v[:,j], n)
     return A
+
+def InverseLaplaceBeltrami(sph1, sph2):
+    # U(x,x0) = -1/(4*np.pi) * np.log(np.abs(1 - <x,x_0>))
+    U = np.abs(1 - np.einsum('ij,ik->jk', sph1.v, sph2.v))
+    U = np.log(np.fmax(U, np.spacing(1)))
+    U = -1/(4*np.pi) * np.einsum('jk,k->jk', U, sph2.b)
+    return U
 
 def plot_mesh3(ax, vecs, tris):
     """ Plots a surface according to a given triangulation.
