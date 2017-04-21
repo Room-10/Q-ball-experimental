@@ -4,7 +4,6 @@ DOKUMENT := main
 
 CHPT_DIR := chpt
 CHAPTERS := $(CHPT_DIR)/prerequisites.tex \
-            $(CHPT_DIR)/L2.tex \
             $(CHPT_DIR)/W1.tex
             
 HEADER_DIR := .
