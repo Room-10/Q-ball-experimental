@@ -5,5 +5,7 @@ Reconstruction of q-ball images using the inverse laplacian, a confidence-interv
 python3 -m venv env
 source ./env/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install wheel
+pip install -r requirements.0.txt
+pip install -r requirements.1.txt
 pip install --upgrade matplotlib

@@ -90,3 +90,12 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Latex
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+*.pdf
+
