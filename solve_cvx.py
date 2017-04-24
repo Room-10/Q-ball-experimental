@@ -39,13 +39,16 @@ def solve_cvx(data, lbd=1.0, refinement=2):
 
     p  = cvxVariable(b_sph.mdims['l_labels'], d_image, n_image)
     g  = cvxVariable(n_image, b_sph.mdims['m_gradients'], d_image, s_manifold)
-    q0  = cvxVariable(n_image)
+    p0 = cvxVariable(b_sph.mdims['l_labels'], n_image)
+    g0 = cvxVariable(n_image, b_sph.mdims['m_gradients'], s_manifold)
+    q0 = cvxVariable(n_image)
     q1 = cvxVariable(n_image, sph.mdims['l_labels'])
     q2 = cvxVariable(n_image, sph.mdims['l_labels'])
 
     obj = cvx.Maximize(
           cvx.vec(q1).T*cvx.vec(rhs_l)
         - cvx.vec(q2).T*cvx.vec(rhs_u)
+        - cvx.sum_entries(cvx.diag(b_sph.b)*p0)/(4*np.pi)
         - cvx.sum_entries(q0)
     )
 
@@ -61,18 +64,22 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     for i in range(n_image):
         for j in range(b_sph.mdims['m_gradients']):
             constraints.append(cvx.norm(g[i][j], 2) <= lbd)
+            constraints.append(cvx.norm(g0[i][j,:], 2) <= lbd)
 
     logging.debug("CVXPY: constraint setup for variable w...")
+    w0_constr = []
     w_constr = []
     for j in range(b_sph.mdims['m_gradients']):
         Aj = b_sph.A[j,:,:]
         Bj = b_sph.B[j,:,:]
         Pj = b_sph.P[j,:]
         for i in range(n_image):
+            w0_constr.append(Aj*g0[i][j,:].T == Bj*p0[Pj,i])
             for t in range(d_image):
                 w_constr.append(
                     Aj*g[i][j][t,:].T == sum([Bj[:,m]*p[Pj[m]][t,i] for m in range(r_points)])
                 )
+    constraints += w0_constr
     constraints += w_constr
 
     logging.debug("CVXPY: constraint setup for variable u...")
@@ -80,7 +87,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     for k in range(b_sph.mdims['l_labels']):
         for i in range(n_image):
             u_constr.append(
-                   b_sph.b[k]*(q0[i] - cvxOp(div_op, p[k], i))
+                   b_sph.b[k]*(p0[k,i] + q0[i] - cvxOp(div_op, p[k], i))
                  - cvx.vec(Phi[:,k]).T*cvx.vec((q1 - q2)[i,:])
                 >= 0
             )
@@ -91,7 +98,8 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     logging.info("CVXPY: check problem is DCP...")
     logging.info(prob.is_dcp())
     logging.info("CVXPY: solving...")
-    prob.solve(solver="SCS", verbose=True)
+    prob.solve(verbose=True)
+    logging.debug("CVXPY: objective value = {}".format(prob.value))
 
     u = np.zeros((b_sph.mdims['l_labels'], n_image), order='C')
     for k in range(b_sph.mdims['l_labels']):

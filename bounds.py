@@ -37,17 +37,26 @@ def compute_bounds(data, sph):
     loglog_E_l = np.log(-np.log(E_u.clip(.001, .999)))
     assert((loglog_E_u >= loglog_E_l).all())
 
-    logging.debug("Preparing FRT ...")
-    FRT_op = FRT_linop(b_sph, sph)
-
     logging.debug("Bounds for the FRT")
+    FRT_op = FRT_linop(b_sph, sph)
     rhs_u = np.einsum('kl,...l->...k', FRT_op, loglog_E_u)
     rhs_l = np.einsum('kl,...l->...k', FRT_op, loglog_E_l)
     assert((rhs_u >= rhs_l).all())
 
+    c_shift = (2 - np.log(2))/(4*np.pi)
     rhs_u, rhs_l = -rhs_l, -rhs_u
-    rhs_u += (2 - np.log(2))/(4*np.pi)
-    rhs_l += (2 - np.log(2))/(4*np.pi)
+    rhs_u += c_shift
+    rhs_l += c_shift
+
+    #from tools import InverseLaplaceBeltrami, normalize_odf
+    #Phi = InverseLaplaceBeltrami(sph, b_sph)
+    #u = np.ones(b_sph.mdims['l_labels'])
+    #normalize_odf(u, b_sph.b)
+    #w = np.einsum('jk,k->j', Phi, u)
+    #print (w.mean())
+    #for i in range(rhs_u.shape[0]):
+    #    rhs_u[i,:] = w[:]+5e-3
+    #    rhs_l[i,:] = w[:]-5e-3
 
     assert((rhs_u >= rhs_l).all())
 

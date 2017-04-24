@@ -1,7 +1,13 @@
 
+import pickle
 import numpy as np
 from numpy.linalg import norm
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection, Line3DCollection
+
+def normalize_odf(odf, vol):
+    odf_flat = odf.reshape(odf.shape[0], -1)
+    odf_sum = np.einsum('k,ki->i', vol, odf_flat)
+    odf_flat[:] = np.einsum('i,ki->ki', 1.0/odf_sum, odf_flat)
 
 def coords_cartesian(r_phi_theta):
     """ Convert spherical coordinates to cartesian coordinates
@@ -106,9 +112,15 @@ def FRT_linop(sph1, sph2, n=20):
     l1, l2 = sph1.mdims['l_labels'], sph2.mdims['l_labels']
     A = np.zeros((l2, l1))
     E = np.eye(l1)
-    for j in range(l2):
-        f = lambda x: sph1.interpolate(E, x)
-        A[j,:] = FRT_compute(f, sph2.v[:,j], n)
+    pickle_file = "cache/sphere-{}-{}-{}.pickle".format(l1, l2, n)
+    try:
+        A[:] = pickle.load(open(pickle_file, 'rb'))
+    except:
+        print("No cached FRT({}-{}-{}). Preparing...".format(l1, l2, n))
+        for j in range(l2):
+            f = lambda x: sph1.interpolate(E, x)
+            A[j,:] = FRT_compute(f, sph2.v[:,j], n)
+        pickle.dump(A, open(pickle_file, 'wb'))
     return A
 
 def InverseLaplaceBeltrami(sph1, sph2):
