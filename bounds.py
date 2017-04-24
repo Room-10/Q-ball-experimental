@@ -18,7 +18,7 @@ def compute_bounds(data, sph):
     S_data = data['S']
 
     logging.debug("Getting bounds on S0 and Si's")
-    c = 0.05
+    c = 0.5
     S0_l = S_data[..., bvals == 0].clip(1.0).mean(-1)*(1.0-c)
     S0_u = S_data[..., bvals == 0].clip(1.0).mean(-1)*(1.0+c)
     S_l = S_data[..., bvals > 0]*(1.0-c)
@@ -27,10 +27,15 @@ def compute_bounds(data, sph):
     logging.debug("Bounds for normalized data E = S/S_0 ...")
     E_u = S_u/S0_l[..., None]
     E_l = S_l/S0_u[..., None]
+    assert((E_u >= E_l).all())
+
+    E_u[:] = 1.0
+    E_l[:] = 0.0
 
     logging.debug("Bounds for the monotone decreasing log(-log) transform")
     loglog_E_u = np.log(-np.log(E_l.clip(.001, .999)))
     loglog_E_l = np.log(-np.log(E_u.clip(.001, .999)))
+    assert((loglog_E_u >= loglog_E_l).all())
 
     logging.debug("Preparing FRT ...")
     FRT_op = FRT_linop(b_sph, sph)
@@ -38,9 +43,12 @@ def compute_bounds(data, sph):
     logging.debug("Bounds for the FRT")
     rhs_u = np.einsum('kl,...l->...k', FRT_op, loglog_E_u)
     rhs_l = np.einsum('kl,...l->...k', FRT_op, loglog_E_l)
+    assert((rhs_u >= rhs_l).all())
 
     rhs_u, rhs_l = -rhs_l, -rhs_u
     rhs_u += (2 - np.log(2))/(4*np.pi)
     rhs_l += (2 - np.log(2))/(4*np.pi)
+
+    assert((rhs_u >= rhs_l).all())
 
     return rhs_l, rhs_u
