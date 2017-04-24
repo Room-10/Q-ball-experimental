@@ -15,7 +15,7 @@ def load_sphere(vecs=None, refinement=2):
         sphere_lvl = vecs.shape[1]
     else:
         sphere_lvl = "r{}".format(refinement)
-    sphere_file = "manifolds/sphere-{}.pickle".format(sphere_lvl)
+    sphere_file = "cache/sphere-{}.pickle".format(sphere_lvl)
     try:
         sph = pickle.load(open(sphere_file, 'rb'))
     except:
