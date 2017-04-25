@@ -10,7 +10,7 @@ from tools import InverseLaplaceBeltrami
 from staggered_diff import staggered_diff_avgskips
 from eval_w1dist import w1_dist
 
-def solve_cvx(data, lbd=1.0, refinement=2):
+def solve_cvx(data, lbd=0.1, refinement=2):
     b_vecs = data['gtab'].bvecs[data['gtab'].bvals > 0,...].T
     b_sph = data['sph']
     sph = load_sphere(refinement=refinement)
@@ -38,7 +38,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
         imagedims="x".join(map(str,imagedims))
     ))
 
-    alpha = 0.0
+    alpha = 0.3
 
     p  = cvxVariable(b_sph.mdims['l_labels'], d_image, n_image)
     g  = cvxVariable(n_image, b_sph.mdims['m_gradients'], d_image, s_manifold)
@@ -56,14 +56,15 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     )
 
     div_op = sparse_div_op(imagedims)
-    lbd = 1.0
 
     logging.debug("CVXPY: constraint setup...")
     constraints = []
     for k in range(sph.mdims['l_labels']):
         for i in range(n_image):
             constraints.append(q1[i,k] >= 0)
+            constraints.append(q1[i,k] <= 1)
             constraints.append(q2[i,k] >= 0)
+            constraints.append(q2[i,k] <= 1)
     for i in range(n_image):
         for j in range(b_sph.mdims['m_gradients']):
             constraints.append(cvx.norm(g[i][j], 2) <= lbd)
@@ -113,7 +114,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
         #discrepancy=np.linalg.norm(u_true.flatten()-u.flatten())/np.linalg.norm(u_true.flatten())
         discrepancy = w1_dist(u,u_true,b_sph).mean()/(2*np.pi)
         logging.debug("Misfit between ground truth and reconstruction = {}".format(discrepancy))
-    
+
     return u.T.reshape(imagedims + (-1,))
 
 def cvxVariable(*args):
