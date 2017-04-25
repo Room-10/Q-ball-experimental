@@ -8,13 +8,14 @@ from manifold_sphere import load_sphere
 from bounds import compute_bounds
 from tools import InverseLaplaceBeltrami
 from staggered_diff import staggered_diff_avgskips
+from eval_w1dist import w1_dist
 
 def solve_cvx(data, lbd=1.0, refinement=2):
     b_vecs = data['gtab'].bvecs[data['gtab'].bvals > 0,...].T
     b_sph = data['sph']
     sph = load_sphere(refinement=refinement)
 
-    rhs_l, rhs_u = compute_bounds(data, sph)
+    rhs_l, rhs_u, u_true = compute_bounds(data, sph)
 
     imagedims = data['S'].shape[:-1]
     d_image = len(imagedims)
@@ -37,6 +38,8 @@ def solve_cvx(data, lbd=1.0, refinement=2):
         imagedims="x".join(map(str,imagedims))
     ))
 
+    alpha = 0.0
+
     p  = cvxVariable(b_sph.mdims['l_labels'], d_image, n_image)
     g  = cvxVariable(n_image, b_sph.mdims['m_gradients'], d_image, s_manifold)
     p0 = cvxVariable(b_sph.mdims['l_labels'], n_image)
@@ -48,7 +51,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     obj = cvx.Maximize(
           cvx.vec(q1).T*cvx.vec(rhs_l)
         - cvx.vec(q2).T*cvx.vec(rhs_u)
-        - cvx.sum_entries(cvx.diag(b_sph.b)*p0)/(4*np.pi)
+        - alpha*cvx.sum_entries(cvx.diag(b_sph.b)*p0)/(4*np.pi)
         - cvx.sum_entries(q0)
     )
 
@@ -64,7 +67,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     for i in range(n_image):
         for j in range(b_sph.mdims['m_gradients']):
             constraints.append(cvx.norm(g[i][j], 2) <= lbd)
-            constraints.append(cvx.norm(g0[i][j,:], 2) <= lbd)
+            constraints.append(cvx.norm(g0[i][j,:], 2) <= 1.0)
 
     logging.debug("CVXPY: constraint setup for variable w...")
     w0_constr = []
@@ -87,7 +90,7 @@ def solve_cvx(data, lbd=1.0, refinement=2):
     for k in range(b_sph.mdims['l_labels']):
         for i in range(n_image):
             u_constr.append(
-                   b_sph.b[k]*(p0[k,i] + q0[i] - cvxOp(div_op, p[k], i))
+                   b_sph.b[k]*(alpha*p0[k,i] + q0[i] - cvxOp(div_op, p[k], i))
                  - cvx.vec(Phi[:,k]).T*cvx.vec((q1 - q2)[i,:])
                 >= 0
             )
@@ -106,6 +109,11 @@ def solve_cvx(data, lbd=1.0, refinement=2):
         for i in range(n_image):
             u[k,i] = u_constr[k*n_image+i].dual_value
 
+    if u_true is not None:
+        #discrepancy=np.linalg.norm(u_true.flatten()-u.flatten())/np.linalg.norm(u_true.flatten())
+        discrepancy = w1_dist(u,u_true,b_sph).mean()/(2*np.pi)
+        logging.debug("Misfit between ground truth and reconstruction = {}".format(discrepancy))
+    
     return u.T.reshape(imagedims + (-1,))
 
 def cvxVariable(*args):
